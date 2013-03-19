@@ -1,24 +1,49 @@
 import urllib2
 import sqlite3
+from multiprocessing import Pool
 
 conn = sqlite3.connect('/data/users/kleinm/wikidata/authorities.db')
 c = conn.cursor()
 
 c.execute("select idval from authorities where idtyp like 'VIAF';")
 viaflist = c.fetchall()
+viaflist = [viafnum[0] for viafnum in viaflist]
 
+
+#constants
 buildprepath = 'http://viaf.org/viaf/'
+buildpostpath = '/'
 
-for viafnum in viaflist:
-    addr = buildprepath + viafnum[0]
+    #Our datatype maker
+def updateALocalRecord(viafnum, updatedVIAFnum):
+    try:
+        c.execute('''update authorities set idval = ? where idval = ? and idtyp = 'VIAF';''', (updatedVIAFnum, viafnum,))
+        conn.commit()
+        #print 'different: ' + str(viafnum) + ' vs. '+ str(updatedVIAFnum)
+    #if the db is locked, just keep trying, not elegant, but should work
+    except sqlite3.OperationalError:
+        updateALocalRecord(viafnum, udpatedVIAFnum)
+
+
+def updateRedir(viafnum):
+    global total
+    addr = buildprepath + viafnum + buildpostpath
     try:
         urlobj = urllib2.urlopen(url=addr, timeout=20)
         
         redirAddr = urlobj.geturl()
+
+        if addr == redirAddr:
+            pass
+            #print 'same', addr
+        else:
+            updatedVIAFnum = redirAddr[21:][:-1]
+            updateALocalRecord(viafnum, updatedVIAFnum)
     
-        print addr
-        print redirAddr
-    
-    except urllib2.URLError:
+    except urllib2.URLError: 
         print 'problem with URL', addr
     #TODO log this
+
+
+pool = Pool(processes=4)              # start 4 worker processes
+pool.map(updateRedir, viaflist)

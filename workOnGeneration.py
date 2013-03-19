@@ -46,7 +46,7 @@ conn = sqlite3.connect('/data/users/kleinm/wikidata/authorities.db')
 c = conn.cursor()
 # Create table if necessary
 c.execute('''CREATE TABLE authorities
-             (qnum, lang, idtyp, idval)''')
+             (lang, qnum, idtyp, idval)''')
 # Save (commit) the changes
 conn.commit()
 
@@ -69,7 +69,7 @@ def crawlLanguage(lang, fullrun=True):
     #start crawling
     for authorityPage in langAuthorityDict[lang]:
         #if we're just testing
-        if (not fullrun) and (seen > 10):
+        if (not fullrun) and (seen > 100):
             return
         else:
             #for reporting
