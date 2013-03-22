@@ -1,6 +1,7 @@
 import urllib2
 import sqlite3
 from multiprocessing import Pool
+import time
 
 conn = sqlite3.connect('/data/users/kleinm/wikidata/authorities.db')
 c = conn.cursor()
@@ -24,9 +25,7 @@ def updateALocalRecord(viafnum, updatedVIAFnum):
     except sqlite3.OperationalError:
         updateALocalRecord(viafnum, udpatedVIAFnum)
 
-
 def updateRedir(viafnum):
-    global total
     addr = buildprepath + viafnum + buildpostpath
     try:
         urlobj = urllib2.urlopen(url=addr, timeout=20)
@@ -44,6 +43,10 @@ def updateRedir(viafnum):
         print 'problem with URL', addr
     #TODO log this
 
+starttime = time.time()
 
-pool = Pool(processes=4)              # start 4 worker processes
+pool = Pool(processes=3)              # start 4 worker processes
 pool.map(updateRedir, viaflist)
+
+endtime = time.time()
+print 'speed: ', (761 /(endtime - starttime))
