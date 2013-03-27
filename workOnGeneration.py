@@ -41,14 +41,18 @@ langAuthorityDict = dict((l,
                       namespaces=None, step=None, total=None, content=False) ) 
                          for l in langTemplateDict)
 
+
 #make a sqlite database
 conn = sqlite3.connect('/data/users/kleinm/wikidata/authorities.db')
 c = conn.cursor()
 # Create table if necessary
-c.execute('''CREATE TABLE authorities
-             (lang, qnum, idtyp, idval)''')
-# Save (commit) the changes
-conn.commit()
+try:
+    c.execute('''CREATE TABLE authorities
+                 (lang, qnum, idtyp, idval)''')
+    # Save (commit) the changes
+    conn.commit()
+except sqlite3.OperationalError:
+    pass
 
 #Our datatype maker
 def makeALocalRecord(lang, qnum, idtyp, idval):
@@ -68,50 +72,67 @@ def crawlLanguage(lang, fullrun=True):
     starttime = time.time()
     #start crawling
     for authorityPage in langAuthorityDict[lang]:
+        print authorityPage
         #if we're just testing
-        if (not fullrun) and (seen > 100):
+        if (not fullrun) and (seen > 10):
             return
         else:
             #for reporting
             seen += 1
-            if seen % 100 == 0:
+            print seen
+            if seen % 10 == 0:
                 temptime = time.time()
                 print lang, 'seen: ', seen, 'time: ', temptime - starttime, 'speed: ', seen / (temptime - starttime)
-    
-            #find the Wikidata page
-            item = pywikibot.ItemPage.fromPage(authorityPage)
-            #then get it
-            item.get()
-            qnum = item.id
-            #get the wikipedia page
-            authorityText = authorityPage.get() 
-            #load it into mwparserfromhell
-            authorityCode = mwparserfromhell.parse(authorityText)
-            #extract the templates
-            authorityTemplates = authorityCode.filter_templates()
-            #look through the templates
-            for authorityTemplate in authorityTemplates:
-                #are these the droids we're looking for?    
-                if authorityTemplate.name == langTemplateShort[lang]:
-                    for param in authorityTemplate.params:
-                        pn = param.name.strip() #making sure it's nonempty
-                        pv = param.value.strip() #making sure it's nonempty
-                        if pv:
-                            if pn in ['TYP', 'LCCN', 'VIAF', 'ORCID', 
-                                          'GND', 'PND', 'SELIBR', 'GDK', 
-                                          'GDK-V1', 'SWD', 'BNF', 'BPN',
-                                          'RID', 'Scopus', 'BIBSYS', 'ULAN',
-                                          'NDL', 'SUDOC', 'KID', 'WORLDCATID']:
-                                makeALocalRecord(lang, qnum, pn, pv)
+            
+            try:
+                #find the Wikidata page
+                item = pywikibot.ItemPage.fromPage(authorityPage)
+                #then get it
+                item.get()
+                qnum = item.id
+                #get the wikipedia page
+                authorityText = authorityPage.get() 
+                #load it into mwparserfromhell
+                authorityCode = mwparserfromhell.parse(authorityText)
+                #extract the templates
+                authorityTemplates = authorityCode.filter_templates()
+                #look through the templates
+                for authorityTemplate in authorityTemplates:
+                    #are these the droids we're looking for?    
+                    if authorityTemplate.name == langTemplateShort[lang]:
+                        for param in authorityTemplate.params:
+                            pn = param.name.strip() #making sure it's nonempty
+                            pv = param.value.strip() #making sure it's nonempty
+                            if pv:
+                                if pn in ['TYP', 'LCCN', 'VIAF', 'GND', 'PND','BNF', 'SUDOC']:
+                                    makeALocalRecord(lang, qnum, pn, pv)
+                                              #'ORCID', 
+                                              #'SELIBR', 'GDK', 
+                                              #'GDK-V1', 'SWD', 'BPN',
+                                              #'RID', 'Scopus', 'BIBSYS', 'ULAN',
+                                              #'NDL', 'SUDOC', 'KID', 'WORLDCATID']:
+                                              
+                                    
+            except pywikibot.NoPage:
+                pass
 
+crawlLanguage('en', False)
+crawlLanguage('de', False)
+crawlLanguage('it', False)
+crawlLanguage('fr', False)
 
 #call the crawler on every language in a multiprocessed way
+'''
 jobs = []
 for lang in langAuthorityDict:
     proc = multiprocessing.Process(target=crawlLanguage, args=(lang,False,))
     jobs.append(proc)
 
-for job in jobs: job.start()
-for job in jobs: job.join()
+for job in jobs: 
+    job.start()
+for job in jobs: 
+    job.join()
+    print job
+'''
 
 print'finished'
