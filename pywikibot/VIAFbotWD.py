@@ -46,6 +46,30 @@ gndMap = {'p': 'Q215627',
 remotePIDList = list()
 for v in propertyMap.itervalues():
     remotePIDList.append(v)
+    
+def getRemoteClaims(qnum):
+    remoteClaims = list()
+    remoteClaimsWithSources = list()
+    
+    page = pywikibot.ItemPage(wikidata, qnum) #  this can be used for any page object
+    page.get() #  you need to call it to access any data.
+    claimObjs = page.claims
+    
+    #get all the right claims
+    for claimID in claimObjs:
+        claimlist = page.claims[claimID]
+        for claim in claimlist:
+            pid = claim.id.upper()
+            if pid in remotePIDList:
+                remoteClaims.append(claim)
+            else:
+                pass
+    #then make it look like local
+    #which is a list of my special types which are lists whose fisrst elements are claims, and whose secodn elements is a list of sources
+    for remoteClaim in remoteClaims:
+        remoteClaimsWithSources.append([remoteClaim, remoteClaim.sources])
+    
+    return remoteClaimsWithSources
 
 def makeSourcedClaim(idValCluster):
     #what's the idtype were addng
@@ -70,6 +94,8 @@ def makeSourcedClaim(idValCluster):
     
     #i wish python had a good Pair datatype, but alas a list whose first item is the claim object and whose second item is a list of sources whill have to do
     return [claimObj, sourceObjList]
+
+
     
 def idValClusterer(idTypCluster):
     '''takes a list of property dicts which all have the same idtyp and returns a list of whose sublist all have the same idval'''
@@ -108,26 +134,64 @@ def propertiesToClaims(qnumCluster):
 
     return localClaimsList
 
+def claimMatch(lc, rc):
+    if (lc.id == rc.id) and (lc.target == rc.target):
+        return True
+    
+    return False
 
-def getRemoteClaims(qnum):
-    remoteClaims = list()
-    page = pywikibot.ItemPage(wikidata, qnum) #  this can be used for any page object
-    page.get() #  you need to call it to access any data.
-    claimObjs = page.claims
-    for claimID in claimObjs:
-        claimlist = page.claims[claimID]
-        for claim in claimlist:
-            pid = claim.id.upper()
-            if pid in remotePIDList:
-                remoteClaims.append(claim)
+def sourceMatch(ls, rsl):
+    for rs in rsl:
+        if (ls.id == rs.id) and (ls.target == rs.target):
+            return True
+    
+    return False
+
+def writeACluster2(qnumCluster):
+    qnum = qnumCluster[0]['qnum'] #any elemnt of qnumClusterList should have the same qnum
+    page = pywikibot.ItemPage(wikidata, qnum)
+    
+    localClaimsWithSources = propertiesToClaims(qnumCluster)  
+    remoteClaimsWithSources = getRemoteClaims(qnum)
+    
+    for lcs in localClaimsWithSources:
+        lc = lcs[0] #the claim part
+        lsl = lcs[1] #the sources list part
+        
+        matchingClaimWithSource = False
+        
+        for rcs in remoteClaimsWithSources:
+            rc = rcs[0] #the claim part
+            
+            if claimMatch(lc, rc):
+                matchingClaimWithSource = rcs
             else:
                 pass
-    return remoteClaims
-
+    
+        if not matchingClaimWithSource: #then we didn't find an exact match
+            addPair(lcs)
+        
+        else: #maybe we can add a source
+            sourcesToAdd = list() #the sources that we'll push to the remoteClaimWithSource, if we find any
+            rsl = matchingClaimWithsource[1] #the source part of the pair
+            for ls in lsl: #localsource in localsourcelist
+                if sourceMatch(ls, rsl):
+                    pass
+                else:
+                    sourcesToAdd.append(ls)
+            for ls in sourcesToAdd:
+                rs = matchingClaimWithSource[0] #the claim oart if the pair
+                rs.addSource(ls)
+                    
+                
+                
+            
+    
 def writeACluster(qnumCluster):
     qnum = qnumCluster[0]['qnum'] #any elemnt of qnumClusterList should have the same qnum
-    localClaimsWithSources = propertiesToClaims(qnumCluster)
+    page = pywikibot.ItemPage(wikidata, qnum)
     
+    localClaimsWithSources = propertiesToClaims(qnumCluster)  
     remoteClaims = getRemoteClaims(qnum)
     
     
@@ -160,30 +224,47 @@ def writeACluster(qnumCluster):
                                         print remoteClaimSource.target == localClaimSource.target
                                         if remoteClaimSource.target == localClaimSource.target:
                                             #TODO log this
-                                            pass #then the point of hte bot is futile
+                                            print 'complete dupe'
+                                            localClaimsWithSources.remove(localClaimWithSources)
                                         else:
+                                            #maybe the remote source is actually account for later on
                                             print 'would update with another source language'
+                                            remoteClaim.addSource(localClaimSource)
+                                            #now we don't need to do this claim later
                                             localClaimsWithSources.remove(localClaimWithSources)
                                     else:
                                         print 'would update with another source method i.e. previously was not "imported from"'
+                                        remoteClaim.addSource(localClaimSource)
+                                        #now we don't need to do this claim later
                                         localClaimsWithSources.remove(localClaimWithSources)
                         #there's not remoteClaim sources
                         else:
                             print 'would add the inaugural source'
+                            for localClaimSource in localClaimSources:
+                                remoteClaim.addSource(localClaimSource)
+                                #now we don't need to do this claim later
                             localClaimsWithSources.remove(localClaimWithSources)
                 else:
                     print 'would add a claim with conflicting idval, a human should probably check this'
+                    page.addClaim(localClaim)
+                    for localClaimSource in localClaimSources:
+                        localClaim.addSource(localClaimSource)
+                    #now we don't need to do this claim later
                     localClaimsWithSources.remove(localClaimWithSources)
+                    
             else:
                 pass
 
     #now that we've look at all the remote data and amended or conflcited, we can push the rest of our queue.
-    print localClaimsWithSources
+    print qnum, len(localClaimsWithSources)
     for localClaimWithSources in localClaimsWithSources:
         localClaim = localClaimWithSources[0]
         localClaimSources = localClaimWithSources[1]
         print 'claim ', localClaim
+        page.addClaim(localClaim)
+        
         for localClaimSource in localClaimSources:
+            localClaim.addSource(localClaimSource)
             print 'source ', localClaimSource
         
     #then write our clue to the page
