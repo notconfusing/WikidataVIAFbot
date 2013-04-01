@@ -134,10 +134,18 @@ def propertiesToClaims(qnumCluster):
 
     return localClaimsList
 
+def addPair(page, localClaimWithSource):
+    lc = localClaimWithSource[0]
+    lsl = localClaimWithSource[1]
+    
+    page.addClaim(lc)
+    
+    for ls in lsl:
+        lc.addSource(ls)
+
 def claimMatch(lc, rc):
     if (lc.id == rc.id) and (lc.target == rc.target):
         return True
-    
     return False
 
 def sourceMatch(ls, rsl):
@@ -154,6 +162,10 @@ def writeACluster2(qnumCluster):
     localClaimsWithSources = propertiesToClaims(qnumCluster)  
     remoteClaimsWithSources = getRemoteClaims(qnum)
     
+    print qnum
+    print localClaimsWithSources
+    print remoteClaimsWithSources
+    
     for lcs in localClaimsWithSources:
         lc = lcs[0] #the claim part
         lsl = lcs[1] #the sources list part
@@ -169,11 +181,12 @@ def writeACluster2(qnumCluster):
                 pass
     
         if not matchingClaimWithSource: #then we didn't find an exact match
-            addPair(lcs)
+            print 'add pair ', lcs
+            addPair(page, lcs)
         
         else: #maybe we can add a source
             sourcesToAdd = list() #the sources that we'll push to the remoteClaimWithSource, if we find any
-            rsl = matchingClaimWithsource[1] #the source part of the pair
+            rsl = matchingClaimWithSource[1] #the source part of the pair
             for ls in lsl: #localsource in localsourcelist
                 if sourceMatch(ls, rsl):
                     pass
@@ -181,6 +194,7 @@ def writeACluster2(qnumCluster):
                     sourcesToAdd.append(ls)
             for ls in sourcesToAdd:
                 rs = matchingClaimWithSource[0] #the claim oart if the pair
+                print 'add source', ls
                 rs.addSource(ls)
                     
                 
@@ -306,7 +320,7 @@ while aRow:
             qnumCluster.append(aRow)
         #if its a new qnum, then ship the old one and start a new list
         else:
-            writeACluster(qnumCluster)
+            writeACluster2(qnumCluster)
             qnumCluster = [aRow]
             currQnum = aRow['qnum']
 
