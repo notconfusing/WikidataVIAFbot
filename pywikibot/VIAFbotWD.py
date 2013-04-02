@@ -1,9 +1,14 @@
 import sqlite3
-import pywikibot
+import os
 from collections import defaultdict
+os.environ['PYWIKIBOT2_DIR'] = '/home/kleinm/workspace/WikidataVIAFbot_branch'
+import pywikibot
+
 
 de_wikipedia = pywikibot.Site('de', 'wikipedia')
 wikidata = de_wikipedia.data_repository()
+
+if not wikidata.logged_in(): wikidata.login()
 
 propertyMap = {'TYP': 'P107',
              'LCCN': 'P244',
@@ -77,10 +82,13 @@ def makeSourcedClaim(idValCluster):
     firstProperty = idValCluster[0] #there's guaranteed to be at least one
     idtyp = firstProperty['idtyp']
     idval = firstProperty['idval']
+    if idtyp == 'PND':
+        idtyp = 'GND'
     claimObj = pywikibot.Claim(site=wikidata, pid=propertyMap[idtyp])
     #gnd needs to be converted
     if idtyp == 'TYP':
         idval = pywikibot.ItemPage(wikidata, gndMap[idval])
+
     
     claimObj.setTarget(idval)
     
@@ -327,6 +335,6 @@ while aRow:
     aRow = rowInterpret(c.fetchone())
 
 #there will be a last unaccountedfor item
-writeACluster(qnumCluster)
+writeACluster2(qnumCluster)
 
 print 'end'

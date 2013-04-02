@@ -1,5 +1,8 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
+import sys
+reload(sys)
+sys.setdefaultencoding("utf-8")
           
 import pywikibot
 import time
@@ -67,23 +70,25 @@ def makeALocalRecord(lang, qnum, idtyp, idval):
 #Our per-language crawler that calls the datatype maker
 
 def crawlLanguage(lang, fullrun=True):
+    print lang, 'executed'
     #for reporting
     seen = 0
     starttime = time.time()
     #start crawling
+    
     for authorityPage in langAuthorityDict[lang]:
-        print authorityPage
+        print seen
         #if we're just testing
         if (not fullrun) and (seen > 10):
             return
         else:
-            #for reporting
+            '''
             seen += 1
             print seen
             if seen % 10 == 0:
                 temptime = time.time()
                 print lang, 'seen: ', seen, 'time: ', temptime - starttime, 'speed: ', seen / (temptime - starttime)
-            
+            '''
             try:
                 #find the Wikidata page
                 item = pywikibot.ItemPage.fromPage(authorityPage)
@@ -102,7 +107,7 @@ def crawlLanguage(lang, fullrun=True):
                     if authorityTemplate.name == langTemplateShort[lang]:
                         for param in authorityTemplate.params:
                             pn = param.name.strip() #making sure it's nonempty
-                            pv = param.value.strip() #making sure it's nonempty
+                            pv = param.value.strip() #making sure it's nonempty    
                             if pv:
                                 if pn in ['TYP', 'LCCN', 'VIAF', 'GND', 'PND','BNF', 'SUDOC']:
                                     makeALocalRecord(lang, qnum, pn, pv)
@@ -116,16 +121,15 @@ def crawlLanguage(lang, fullrun=True):
             except pywikibot.NoPage:
                 pass
 
-crawlLanguage('en', False)
-crawlLanguage('de', False)
-crawlLanguage('it', False)
-crawlLanguage('fr', False)
+#crawlLanguage('en', False)
+#crawlLanguage('de', False)
+#crawlLanguage('it', False)
+#crawlLanguage('fr', False)
 
 #call the crawler on every language in a multiprocessed way
-'''
 jobs = []
 for lang in langAuthorityDict:
-    proc = multiprocessing.Process(target=crawlLanguage, args=(lang,False,))
+    proc = multiprocessing.Process(target=crawlLanguage, args=(lang,False))
     jobs.append(proc)
 
 for job in jobs: 
@@ -133,6 +137,5 @@ for job in jobs:
 for job in jobs: 
     job.join()
     print job
-'''
-
+    
 print'finished'
