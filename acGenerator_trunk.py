@@ -109,6 +109,8 @@ def crawlLanguage(lang, fullrun=True):
                 for authorityTemplate in authorityTemplates:
                     #are these the droids we're looking for?    
                     if authorityTemplate.name == langTemplateShort[lang]:
+                        if hasNonPGND(authorityTemplate):
+                            break
                         for param in authorityTemplate.params:
                             pn = param.name.strip() #making sure it's nonempty
                             pv = param.value.strip() #making sure it's nonempty    
