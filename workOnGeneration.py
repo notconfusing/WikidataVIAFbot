@@ -69,6 +69,16 @@ def makeALocalRecord(lang, qnum, idtyp, idval):
     
 #Our per-language crawler that calls the datatype maker
 
+def hasNonPGND(authorityTemplate):
+    for param in authorityTemplate.params:
+                pn = param.name.strip() #making sure it's nonempty
+                pv = param.value.strip() #making sure it's nonempty
+                pv = pv.lower()
+                if pn == 'TYP' and pv != 'p': #its a gnd not of type p
+                    return True
+                else:
+                    return False
+
 def crawlLanguage(lang, fullrun=True):
     print lang, 'executed'
     #for reporting
@@ -105,6 +115,8 @@ def crawlLanguage(lang, fullrun=True):
                 for authorityTemplate in authorityTemplates:
                     #are these the droids we're looking for?    
                     if authorityTemplate.name == langTemplateShort[lang]:
+                        if hasNonPGND(authorityTemplate):
+                            break
                         for param in authorityTemplate.params:
                             pn = param.name.strip() #making sure it's nonempty
                             pv = param.value.strip() #making sure it's nonempty    

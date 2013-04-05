@@ -1,14 +1,32 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
 import sqlite3
 import os
 from collections import defaultdict
 os.environ['PYWIKIBOT2_DIR'] = '/home/kleinm/workspace/WikidataVIAFbot_branch'
 import pywikibot
+import json
+import urllib2
+import time
+import mwparserfromhell
 
-
-de_wikipedia = pywikibot.Site('de', 'wikipedia')
-wikidata = de_wikipedia.data_repository()
+en_wikipedia = pywikibot.Site('en', 'wikipedia')
+wikidata = en_wikipedia.data_repository()
 
 if not wikidata.logged_in(): wikidata.login()
+if not en_wikipedia.logged_in(): en_wikipedia.login()
+
+try:
+    positionsJSON = open('positions.JSON')
+    positions = json.load(positionsJSON)
+    positionsJSON.close()
+except IOError:
+    positions = {'prevtouched': 0, 'viafredirs': 0, 'isniadds': 0, 'claimadds':0, 'sourceadds':0}
+    
+def savePositions():
+    positionsJSON = open('positions.JSON', 'w')
+    json.dump(positions, positionsJSON, indent=4)
+    positionsJSON.close()
 
 propertyMap = {'TYP': 'P107',
              'LCCN': 'P244',
@@ -37,7 +55,7 @@ sourceMap = {'imported from':'P143',
              'de':'Q48183',
              'fr':'Q8447',
              'it':'Q11920',
-             'xx':'Q423048',}
+             'xx':'Q423048',} #this is from isni, i couldn't think of a better two letter shortcode
 
 gndMap = {'p': 'Q215627',
           'k': 'Q43229',
@@ -51,6 +69,39 @@ gndMap = {'p': 'Q215627',
 remotePIDList = list()
 for v in propertyMap.itervalues():
     remotePIDList.append(v)
+    
+langSiteDict =  {'en': pywikibot.Site('en','wikipedia'),
+                 'de': pywikibot.Site('de','wikipedia'),
+                 'fr': pywikibot.Site('fr','wikipedia'),
+                 'it': pywikibot.Site('it','wikipedia'),
+                 #'co': pywikibot.Site('en','commons')
+                 }
+
+langTemplateDict = {'en': 'Template:Authority control', 
+                    'de': 'Vorlage:Normdaten', 
+                    'fr': 'Modèle:Autorité',
+                    'it': 'Template:Controllo di autorità',
+                    #'co': 'Template:Authority control'
+                    }
+
+langTemplateShort= {'en': 'Authority control', 
+                    'de': 'Normdaten', 
+                    'fr': 'Autorité',
+                    'it': 'Controllo di autorità',
+                    #'co': 'Authority control'
+                    }
+
+#makes dictionary Page instances for each template
+langPageDict = dict((l, 
+                     pywikibot.Page(langSiteDict[l], langTemplateDict[l]) ) 
+                    for l in langSiteDict) 
+
+#makes a dictionary of languages along with an iterable over all their authortiy containing pages  
+langAuthorityDict = dict((l, 
+                          langPageDict[l].getReferences(follow_redirects=True, withTemplateInclusion=True,
+                      onlyTemplateInclusion=True, redirectsOnly=False,
+                      namespaces=None, step=None, total=None, content=False) ) 
+                         for l in langTemplateDict)
     
 def getRemoteClaims(qnum):
     remoteClaims = list()
@@ -76,6 +127,17 @@ def getRemoteClaims(qnum):
     
     return remoteClaimsWithSources
 
+def lccnNormalize(lccn):
+    '''see http://www.loc.gov/marc/lccn-namespace.html'''
+    returnstring = ''
+    lccn = lccn.split('/')
+    while (not (len(lccn[-1]) == 6)):
+        lccn[-1] = '0' + lccn[-1]
+    for i in lccn:
+        returnstring += i
+    return returnstring
+        
+
 def makeSourcedClaim(idValCluster):
     #what's the idtype were addng
     
@@ -84,6 +146,8 @@ def makeSourcedClaim(idValCluster):
     idval = firstProperty['idval']
     if idtyp == 'PND':
         idtyp = 'GND'
+    if idtyp == 'LCCN':
+        idval = lccnNormalize(idval) #for normalizing purposes.
     claimObj = pywikibot.Claim(site=wikidata, pid=propertyMap[idtyp])
     #gnd needs to be converted
     if idtyp == 'TYP':
@@ -147,9 +211,11 @@ def addPair(page, localClaimWithSource):
     lsl = localClaimWithSource[1]
     
     page.addClaim(lc)
+    positions['claimadds'] += 1
     
     for ls in lsl:
         lc.addSource(ls)
+        positions['sourceadds'] += 1
 
 def claimMatch(lc, rc):
     if (lc.id == rc.id) and (lc.target == rc.target):
@@ -170,10 +236,6 @@ def writeACluster2(qnumCluster):
     localClaimsWithSources = propertiesToClaims(qnumCluster)  
     remoteClaimsWithSources = getRemoteClaims(qnum)
     
-    print qnum
-    print localClaimsWithSources
-    print remoteClaimsWithSources
-    
     for lcs in localClaimsWithSources:
         lc = lcs[0] #the claim part
         lsl = lcs[1] #the sources list part
@@ -189,7 +251,7 @@ def writeACluster2(qnumCluster):
                 pass
     
         if not matchingClaimWithSource: #then we didn't find an exact match
-            print 'add pair ', lcs
+            print 'decision add pair ', lcs
             addPair(page, lcs)
         
         else: #maybe we can add a source
@@ -204,137 +266,118 @@ def writeACluster2(qnumCluster):
                 rs = matchingClaimWithSource[0] #the claim oart if the pair
                 print 'add source', ls
                 rs.addSource(ls)
-                    
+                positions['sourceadds'] += 1
                 
-                
-            
-    
-def writeACluster(qnumCluster):
-    qnum = qnumCluster[0]['qnum'] #any elemnt of qnumClusterList should have the same qnum
-    page = pywikibot.ItemPage(wikidata, qnum)
-    
-    localClaimsWithSources = propertiesToClaims(qnumCluster)  
-    remoteClaims = getRemoteClaims(qnum)
-    
-    
-    #first see which AC we can add to, or don't have to write, and remove it from out queue
-    
-    for remoteClaim in remoteClaims:
-        #do they have the same idtyp
-        for localClaimWithSources in localClaimsWithSources:
-            #recall a clam with a source is a list whos first element is the Claim
-            localClaim = localClaimWithSources[0]
-            localClaimSources = localClaimWithSources[1]
-            print qnum, ' claimid compares ', remoteClaim.id, localClaim.id
-            print remoteClaim.id == localClaim.id
-            if remoteClaim.id == localClaim.id:
-                #do they have the same idval?
-                print qnum, ' claimtarget compares ', remoteClaim.target, localClaim.target
-                print remoteClaim.target == localClaim.target 
-                if remoteClaim.target == localClaim.target:
-                    #do they have the same source?
-                        #for every remote source
-                        if remoteClaim.sources:
-                            for remoteClaimSource in remoteClaim.sources:
-                            #and for every local source
-                                for localClaimSource in localClaimSources:
-                                    print qnum, ' sourceid compares ', remoteClaimSource.id, localClaimSource.id
-                                    print remoteClaimSource.id == localClaimSource.id
-                                    if remoteClaimSource.id == localClaimSource.id:
-                                        #do those sources have the same target
-                                        print qnum, ' sourcetarget compares ', remoteClaimSource.target, localClaimSource.target
-                                        print remoteClaimSource.target == localClaimSource.target
-                                        if remoteClaimSource.target == localClaimSource.target:
-                                            #TODO log this
-                                            print 'complete dupe'
-                                            localClaimsWithSources.remove(localClaimWithSources)
-                                        else:
-                                            #maybe the remote source is actually account for later on
-                                            print 'would update with another source language'
-                                            remoteClaim.addSource(localClaimSource)
-                                            #now we don't need to do this claim later
-                                            localClaimsWithSources.remove(localClaimWithSources)
-                                    else:
-                                        print 'would update with another source method i.e. previously was not "imported from"'
-                                        remoteClaim.addSource(localClaimSource)
-                                        #now we don't need to do this claim later
-                                        localClaimsWithSources.remove(localClaimWithSources)
-                        #there's not remoteClaim sources
-                        else:
-                            print 'would add the inaugural source'
-                            for localClaimSource in localClaimSources:
-                                remoteClaim.addSource(localClaimSource)
-                                #now we don't need to do this claim later
-                            localClaimsWithSources.remove(localClaimWithSources)
-                else:
-                    print 'would add a claim with conflicting idval, a human should probably check this'
-                    page.addClaim(localClaim)
-                    for localClaimSource in localClaimSources:
-                        localClaim.addSource(localClaimSource)
-                    #now we don't need to do this claim later
-                    localClaimsWithSources.remove(localClaimWithSources)
-                    
-            else:
-                pass
 
-    #now that we've look at all the remote data and amended or conflcited, we can push the rest of our queue.
-    print qnum, len(localClaimsWithSources)
-    for localClaimWithSources in localClaimsWithSources:
-        localClaim = localClaimWithSources[0]
-        localClaimSources = localClaimWithSources[1]
-        print 'claim ', localClaim
-        page.addClaim(localClaim)
+def viafredir(viafnum):
+    addr = 'http://viaf.org/viaf/' + viafnum + '/'
+    try:
+        urlobj = urllib2.urlopen(url=addr, timeout=20)
         
-        for localClaimSource in localClaimSources:
-            localClaim.addSource(localClaimSource)
-            print 'source ', localClaimSource
+        redirAddr = urlobj.geturl()
         
-    #then write our clue to the page
-    
-    #then put the page
-        
-        
-
-def rowInterpret(sqltuple):
-    if sqltuple == None:
-        return None
-    else:
-        row = dict()
-        row['lang'] = sqltuple[0]
-        row['qnum'] = sqltuple[1]
-        row['idtyp'] = sqltuple[2]
-        row['idval'] = sqltuple[3]
-        return row
-
-
-#get the query
-conn = sqlite3.connect('/data/users/kleinm/wikidata/tests.db')
-c = conn.cursor()
-
-c.execute("select * from authorities order by qnum;")
-aRow = rowInterpret(c.fetchone())
-
-first = True
-qnumCluster = list() #a list of authority rows (dicts) that should all have the same qnum
-currQnum = False
-while aRow:
-    if first:
-        currQnum = aRow['qnum']
-        qnumCluster.append(aRow)
-        first = False
-    else:
-        #is it part of a group, then add it
-        if aRow['qnum'] == currQnum:
-            qnumCluster.append(aRow)
-        #if its a new qnum, then ship the old one and start a new list
+        if addr == redirAddr:
+            return viafnum
+            #print 'same', addr
         else:
-            writeACluster2(qnumCluster)
-            qnumCluster = [aRow]
-            currQnum = aRow['qnum']
+            updatedVIAFnum = redirAddr[21:][:-1]
+            positions['viafredirs'] += 1
+            return updatedVIAFnum
+    
+    except urllib2.URLError: 
+        return viafnum
 
-    aRow = rowInterpret(c.fetchone())
+VIAFISNImapfile = open('VIAFISNImap.json', 'r')
+VIAFISNImap = json.load(VIAFISNImapfile)
 
-#there will be a last unaccountedfor item
-writeACluster2(qnumCluster)
+def isniEquivs(viafnum):
+    '''returns a list of equivalent isnis for a viafnum or None if none exists'''
+    try:
+        isniEquivList = VIAFISNImap[viafnum]
+    except KeyError:
+        return False
+    return isniEquivList
+
+def makeAC(qnumcluster):
+    for clusteritem in qnumcluster:
+        if clusteritem['idtyp'] == 'VIAF':
+            #lets check if it's moved
+            clusteritem['idval'] = viafredir(clusteritem['idval'])
+            #find a list of isni equivalents if they exist
+            isniEquivList = isniEquivs(clusteritem['idval'])
+            if isniEquivList:
+                for isninum in isniEquivList:
+                    #REMEMBER TO ADD SPACES
+                    qnumcluster.append({'lang':'xx', 'qnum':clusteritem['qnum'], 'idtyp':'ISNI', 'idval':isninum})
+                    positions['isniadds'] += 1
+    writeACluster2(qnumcluster)
+
+def hasNonPGND(authorityTemplate):
+    for param in authorityTemplate.params:
+                pn = param.name.strip() #making sure it's nonempty
+                pv = param.value.strip() #making sure it's nonempty
+                pv = pv.lower()
+                if pn == 'TYP' and pv != 'p': #its a gnd not of type p
+                    return True
+                else:
+                    return False
+    
+
+
+def crawlLanguage(lang):
+    print lang, 'executed'
+    #for reporting
+    seen = 0
+    starttime = time.time()
+    #start crawling
+    for authorityPage in langAuthorityDict[lang]:
+        seen += 1
+        if positions['prevtouched'] >= seen:
+            continue
+        print authorityPage
+        qnumcluster = list()
+        
+        if seen % 10 == 0:
+            temptime = time.time()
+            print lang, 'seen: ', seen, 'time: ', temptime - starttime, 'speed: ', seen / (temptime - starttime)
+        try:
+            #find the Wikidata page
+            item = pywikibot.ItemPage.fromPage(authorityPage)
+            #then get it
+            item.get()
+            qnum = item.id
+            #get the wikipedia page
+            authorityText = authorityPage.get() 
+            #load it into mwparserfromhell
+            authorityCode = mwparserfromhell.parse(authorityText)
+            #extract the templates
+            authorityTemplates = authorityCode.filter_templates()
+            #look through the templates
+            for authorityTemplate in authorityTemplates:
+                #are these the droids we're looking for?    
+                if authorityTemplate.name.strip() == langTemplateShort[lang]:
+                    if hasNonPGND(authorityTemplate):
+                        break
+                    for param in authorityTemplate.params:
+                        pn = param.name.strip() #making sure it's nonempty
+                        pv = param.value.strip() #making sure it's nonempty    
+                        if pv:
+                            if pn in ['TYP', 'LCCN', 'VIAF', 'GND', 'PND','BNF', 'SUDOC']:
+                                clusteritem ={'lang':lang, 'qnum':qnum, 'idtyp':pn, 'idval':pv}
+                                qnumcluster.append(clusteritem)
+                                          #'ORCID', 
+                                          #'SELIBR', 'GDK', 
+                                          #'GDK-V1', 'SWD', 'BPN',
+                                          #'RID', 'Scopus', 'BIBSYS', 'ULAN',
+                                          #'NDL', 'SUDOC', 'KID', 'WORLDCATID']:
+            if qnumcluster:                        
+                makeAC(qnumcluster)
+            positions['prevtouched'] = seen #remember how many we've done
+            savePositions() #save our place in case we crash                 
+        except pywikibot.NoPage:
+            pass
+
+
+crawlLanguage('en')
 
 print 'end'
