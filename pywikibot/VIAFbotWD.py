@@ -21,7 +21,15 @@ try:
     positions = json.load(positionsJSON)
     positionsJSON.close()
 except IOError:
-    positions = {'prevtouched': 0, 'viafredirs': 0, 'isniadds': 0, 'claimadds':0, 'sourceadds':0}
+    positions = {'prevtouched': 0, 'viafredirs': 0, 
+                 'p107claim':0, 'p107source':0, 
+                 'p244claim':0, 'p244source':0, 
+                 'p214claim':0, 'p214source':0, 
+                 'p227claim':0, 'p227source':0, 
+                 'p268claim':0, 'p268source':0,
+                 'p269claim':0, 'p269source':0,
+                 'p213claim':0, 'p213source':0,
+                 'p143source':0  }
     
 def savePositions():
     positionsJSON = open('positions.JSON', 'w')
@@ -211,11 +219,11 @@ def addPair(page, localClaimWithSource):
     lsl = localClaimWithSource[1]
     
     page.addClaim(lc)
-    positions['claimadds'] += 1
+    positions[str(lc.id)+'claim'] += 1
     
     for ls in lsl:
         lc.addSource(ls)
-        positions['sourceadds'] += 1
+        positions[str(lc.id)+'source'] += 1
 
 def claimMatch(lc, rc):
     if (lc.id == rc.id) and (lc.target == rc.target):
@@ -266,7 +274,7 @@ def writeACluster2(qnumCluster):
                 rs = matchingClaimWithSource[0] #the claim oart if the pair
                 print 'add source', ls
                 rs.addSource(ls)
-                positions['sourceadds'] += 1
+                positions[str(lc.id)+'source'] += 1
                 
 
 def viafredir(viafnum):
@@ -309,7 +317,6 @@ def makeAC(qnumcluster):
                 for isninum in isniEquivList:
                     #REMEMBER TO ADD SPACES
                     qnumcluster.append({'lang':'xx', 'qnum':clusteritem['qnum'], 'idtyp':'ISNI', 'idval':isninum})
-                    positions['isniadds'] += 1
     writeACluster2(qnumcluster)
 
 def hasNonPGND(authorityTemplate):
@@ -360,18 +367,25 @@ def crawlLanguage(lang):
                         break
                     for param in authorityTemplate.params:
                         pn = param.name.strip() #making sure it's nonempty
-                        pv = param.value.strip() #making sure it's nonempty    
+                        pv = param.value.strip() #making sure it's nonempty   
                         if pv:
                             if pn in ['TYP', 'LCCN', 'VIAF', 'GND', 'PND','BNF', 'SUDOC']:
+                                pv = pv.split()[0]
                                 clusteritem ={'lang':lang, 'qnum':qnum, 'idtyp':pn, 'idval':pv}
+                                print clusteritem
                                 qnumcluster.append(clusteritem)
                                           #'ORCID', 
                                           #'SELIBR', 'GDK', 
                                           #'GDK-V1', 'SWD', 'BPN',
                                           #'RID', 'Scopus', 'BIBSYS', 'ULAN',
                                           #'NDL', 'SUDOC', 'KID', 'WORLDCATID']:
-            if qnumcluster:                        
-                makeAC(qnumcluster)
+            if qnumcluster:
+                try:                        
+                    makeAC(qnumcluster)
+                except pywikibot.data.api.APIError as err:
+                    errlang = err.info[-5:-3]
+                    item.editDescriptions({errlang:''}, summary="Bot removing too long description", bot=True)
+                    makeAC(qnumcluster)
             positions['prevtouched'] = seen #remember how many we've done
             savePositions() #save our place in case we crash                 
         except pywikibot.NoPage:
