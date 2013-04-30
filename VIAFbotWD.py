@@ -1,5 +1,9 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
+import sys
+reload(sys)
+sys.setdefaultencoding("utf-8")
+
 import sqlite3
 import os
 from collections import defaultdict
@@ -9,6 +13,8 @@ import json
 import urllib2
 import time
 import mwparserfromhell
+import logging
+logging.basicConfig(filename='logofviafbot.log',level=logging.DEBUG)
 
 en_wikipedia = pywikibot.Site('en', 'wikipedia')
 wikidata = en_wikipedia.data_repository()
@@ -135,11 +141,14 @@ def getRemoteClaims(qnum):
     
     return remoteClaimsWithSources
 
-def lccnNormalize(lccn):
+def lccnNormalize(lccn_unnormed):
     '''see http://www.loc.gov/marc/lccn-namespace.html'''
     returnstring = ''
-    lccn = lccn.split('/')
-    while (not (len(lccn[-1]) == 6)):
+    
+    lccn = lccn_unnormed.split('/')
+    if len(lccn) != 3:
+        return lccn_unnormed
+    while ((len(lccn[-1]) < 6)):
         lccn[-1] = '0' + lccn[-1]
     for i in lccn:
         returnstring += i
@@ -222,7 +231,7 @@ def addPair(page, localClaimWithSource):
     positions[str(lc.id)+'claim'] += 1
     
     for ls in lsl:
-        lc.addSource(ls)
+        lc.addSource(ls, bot=True)
         positions[str(lc.id)+'source'] += 1
 
 def claimMatch(lc, rc):
@@ -273,7 +282,7 @@ def writeACluster2(qnumCluster):
             for ls in sourcesToAdd:
                 rs = matchingClaimWithSource[0] #the claim oart if the pair
                 print 'add source', ls
-                rs.addSource(ls)
+                rs.addSource(ls, bot=True)
                 positions[str(lc.id)+'source'] += 1
                 
 
@@ -359,7 +368,6 @@ def crawlLanguage(lang):
             authorityCode = mwparserfromhell.parse(authorityText)
             #extract the templates
             authorityTemplates = authorityCode.filter_templates()
-            #look through the templates
             for authorityTemplate in authorityTemplates:
                 #are these the droids we're looking for?    
                 if authorityTemplate.name.strip() == langTemplateShort[lang]:
@@ -383,9 +391,15 @@ def crawlLanguage(lang):
                 try:                        
                     makeAC(qnumcluster)
                 except pywikibot.data.api.APIError as err:
-                    errlang = err.info[-5:-3]
+                    print err.info
+                    errlangla = err.info[-5:-3]
                     item.editDescriptions({errlang:''}, summary="Bot removing too long description", bot=True)
                     makeAC(qnumcluster)
+                except (KeyboardInterrupt, SystemExit):
+                    raise
+                except:
+                    logging.warning('non-API error on', qnumcluster)
+                    # report error and proceed
             positions['prevtouched'] = seen #remember how many we've done
             savePositions() #save our place in case we crash                 
         except pywikibot.NoPage:
