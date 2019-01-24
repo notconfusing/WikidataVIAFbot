@@ -62,7 +62,8 @@ propertyMap = {'TYP': 'P107',
              'SUDOC':'P269', 
              #'KID':, 
              #'WORLDCATID':
-             'ISNI': 'P213',}
+             'ISNI': 'P213',
+             'ERRR': 'P6394',}
          
 sourceMap = {'imported from':'P143',
              'en':'Q328',
